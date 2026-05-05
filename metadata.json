@@ -1,0 +1,12 @@
+{
+  "name": "AI Scanner - Pawn Management System",
+  "description": "An OCR-powered digitization system for pawn shops, managing pawn tickets and receipts with status tracking, branch-based access, and Cloudinary + Google Sheets integration.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "OCR",
+    "Cloud Storage",
+    "Reporting"
+  ]
+}
