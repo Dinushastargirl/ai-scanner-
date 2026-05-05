@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node server.ts",
-    "build": "echo 'No build step needed for vanilla app'",
+    "build": "vite build",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },

@@ -15,7 +15,7 @@ import {
   FileSpreadsheet,
   Upload
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 // --- Types ---
 interface User {
@@ -144,7 +144,7 @@ export default function App() {
         localStorage.setItem('user', JSON.stringify(data.user));
         setToken(data.token);
         setUser(data.user);
-        setView('main');
+        setView('dashboard');
       } else {
         setLoginError(data.error || 'Login failed');
       }
@@ -168,7 +168,7 @@ export default function App() {
             }
           } catch (err) {
             alert('Camera access denied');
-            setView('main');
+            setView('dashboard');
           }
     }, 100);
   };
