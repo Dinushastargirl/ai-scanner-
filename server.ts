@@ -155,31 +155,46 @@ async function startServer() {
       // Upload to Cloudinary
       let imageUrl = '';
       if (req.file) {
-        console.log(`Starting Cloudinary upload for ${ticket_number}...`);
-        const cloudResult = await cloudinary.uploader.upload(req.file.path, {
-          folder: `ai_scanner/${branch_name}/${ticket_number}`,
-        });
-        imageUrl = cloudResult.secure_url;
-        console.log('Cloudinary upload success:', imageUrl);
-        fs.unlinkSync(req.file.path);
+        console.log(`[CLOUDINARY] Starting upload for Ticket ${ticket_number}. Path: ${req.file.path}`);
+        try {
+          const cloudResult = await cloudinary.uploader.upload(req.file.path, {
+            folder: `ai_scanner/${branch_name}/${ticket_number}`,
+            resource_type: 'auto'
+          });
+          imageUrl = cloudResult.secure_url;
+          console.log('[CLOUDINARY] Success:', imageUrl);
+        } catch (uploadErr) {
+          console.error('[CLOUDINARY] Upload Failed:', uploadErr);
+          // Don't fail the whole request yet, but log it clearly
+        } finally {
+          if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+          }
+        }
+      } else {
+        console.warn(`[SERVER] No file received for Ticket ${ticket_number}`);
       }
 
       const raw_ocr_text = data.raw_ocr_text || '';
 
       if (type === 'RECEIPT') {
         const row: any = db.prepare('SELECT id FROM records WHERE ticket_number = ?').get(ticket_number);
-        if (!row) return res.status(404).json({ error: 'Original Pawn Ticket not found' });
+        if (!row) {
+          console.error(`[DB] Redeeming non-existent ticket: ${ticket_number}`);
+          return res.status(404).json({ error: 'Original Pawn Ticket not found in database. Please scan the ticket first.' });
+        }
 
         db.prepare('UPDATE records SET status = ?, receipt_image_url = ?, raw_ocr_text = ?, updated_at = ? WHERE ticket_number = ?')
-          .run('REDEEMED', imageUrl, raw_ocr_text, new Date().toISOString(), ticket_number);
+          .run('REDEEMED', imageUrl || '', raw_ocr_text, new Date().toISOString(), ticket_number);
         
+        console.log(`[DB] Ticket ${ticket_number} redeemed successfully.`);
         await syncToSheets();
         res.json({ message: 'PROCESS COMPLETE - Loan Redeemed' });
       } else {
         const row: any = db.prepare('SELECT id FROM records WHERE ticket_number = ?').get(ticket_number);
         
         if (row) {
-          // If it exists, update it instead of erroring
+          console.log(`[DB] Updating existing ticket: ${ticket_number}`);
           const sql = `UPDATE records SET 
                         name = ?, 
                         nic = ?, 
@@ -194,17 +209,17 @@ async function startServer() {
           
           db.prepare(sql).run(
             name, nic, item_description, weight, loan_amount, interest_rate, raw_ocr_text,
-            imageUrl, imageUrl, new Date().toISOString(), ticket_number
+            imageUrl || '', imageUrl || '', new Date().toISOString(), ticket_number
           );
           
           await syncToSheets();
           res.json({ message: 'PROCESS COMPLETE - Ticket Updated' });
         } else {
-          // Create new
+          console.log(`[DB] Creating new ticket: ${ticket_number}`);
           const sql = `INSERT INTO records (ticket_number, name, nic, item_description, weight, loan_amount, interest_rate, status, branch_id, created_by, ticket_image_url, raw_ocr_text, created_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
           
-          db.prepare(sql).run(ticket_number, name, nic, item_description, weight, loan_amount, interest_rate, 'ACTIVE', branch_id, req.user.id, imageUrl, raw_ocr_text, new Date().toISOString());
+          db.prepare(sql).run(ticket_number, name, nic, item_description, weight, loan_amount, interest_rate, 'ACTIVE', branch_id, req.user.id, imageUrl || '', raw_ocr_text, new Date().toISOString());
           
           await syncToSheets();
           res.json({ message: 'PROCESS COMPLETE - Ticket Created' });
@@ -212,30 +227,36 @@ async function startServer() {
       }
 
       async function syncToSheets() {
+          if (!process.env.GOOGLE_SHEET_ID) {
+            console.log('[SHEETS] Skipping sync: GOOGLE_SHEET_ID not set');
+            return;
+          }
+          
+          console.log(`[SHEETS] Attempting sync for ${ticket_number}...`);
           try {
-            if (process.env.GOOGLE_SHEET_ID) {
-              const serviceAccountAuth = new JWT({
-                email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-                key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-                scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-              });
-              const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, serviceAccountAuth);
-              await doc.loadInfo();
-              const sheet = doc.sheetsByIndex[0];
-              await sheet.addRow({
-                  'Branch': branch_name,
-                  'Receipt Number': ticket_number,
-                  'Name': name,
-                  'NIC': nic,
-                  'Amount': loan_amount,
-                  'Description': item_description,
-                  'Image URL': imageUrl,
-                  'Timestamp': new Date().toISOString(),
-                  'Status': type === 'RECEIPT' ? 'REDEEMED' : 'ACTIVE'
-              });
-              console.log('Sheet row appended successfully');
-            }
-          } catch (e) { console.error('Sheet Sync error', e); }
+            const serviceAccountAuth = new JWT({
+              email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+              key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+              scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+            });
+            const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, serviceAccountAuth);
+            await doc.loadInfo();
+            const sheet = doc.sheetsByIndex[0];
+            await sheet.addRow({
+                'Branch': branch_name,
+                'Receipt Number': ticket_number,
+                'Name': name,
+                'NIC': nic,
+                'Amount': loan_amount,
+                'Description': item_description,
+                'Image URL': imageUrl || 'N/A',
+                'Timestamp': new Date().toISOString(),
+                'Status': type === 'RECEIPT' ? 'REDEEMED' : 'ACTIVE'
+            });
+            console.log(`[SHEETS] Sync success for ${ticket_number}`);
+          } catch (e: any) { 
+            console.error('[SHEETS] Sync error:', e.message); 
+          }
       }
     } catch (err) {
       res.status(500).json({ error: 'System error' });

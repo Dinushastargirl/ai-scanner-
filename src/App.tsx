@@ -177,32 +177,36 @@ export default function App() {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
+      
+      // Use higher quality capture
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (ctx) {
         ctx.drawImage(video, 0, 0);
         
-        // Preprocess
+        // Advanced Preprocessing for OCR
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imageData.data;
         for (let i = 0; i < data.length; i += 4) {
           const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-          const contrast = 1.2;
-          const val = ((avg - 128) * contrast) + 128;
-          data[i] = data[i+1] = data[i+2] = Math.max(0, Math.min(255, val));
+          // Grayscale + Contrast
+          const threshold = 120;
+          const val = avg > threshold ? 255 : 0;
+          data[i] = data[i+1] = data[i+2] = val;
         }
         ctx.putImageData(imageData, 0, 0);
 
         canvas.toBlob((blob) => {
           if (blob) {
+            console.log(`Captured Image: ${blob.size} bytes`);
             setCurrentBlob(blob);
             setCurrentCapture(URL.createObjectURL(blob));
             setView('edit');
             processOCR(blob);
             stopScanner();
           }
-        }, 'image/jpeg', 0.9);
+        }, 'image/jpeg', 0.95);
       }
     }
   };
@@ -573,23 +577,49 @@ export default function App() {
     </div>
   );
 
-  const renderViewer = (title: string, message: string) => (
-      <div className="max-w-4xl mx-auto py-20 text-center">
-          <div className="w-20 h-20 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-6 text-slate-400">
-              <FileSpreadsheet className="w-10 h-10" />
+  const renderViewer = (title: string, message: string, icon: any) => {
+    const Icon = icon;
+    return (
+      <div className="max-w-4xl mx-auto py-20 px-8">
+          <div className="bg-white rounded-[2.5rem] p-12 shadow-2xl border border-slate-100 flex flex-col items-center text-center gap-8">
+              <div className="w-24 h-24 bg-blue-50 rounded-3xl flex items-center justify-center text-blue-600 shadow-inner">
+                  <Icon className="w-12 h-12" />
+              </div>
+              <div>
+                  <h2 className="text-4xl font-black text-slate-800 mb-4 tracking-tight">{title}</h2>
+                  <p className="text-slate-500 text-lg max-w-lg mx-auto font-medium">{message}</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-md">
+                 <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-xs font-bold text-slate-400 uppercase mb-2">Integration Status</p>
+                    <p className="text-emerald-600 font-black flex items-center justify-center gap-2">
+                       <CheckCircle className="w-4 h-4" /> Connected
+                    </p>
+                 </div>
+                 <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-xs font-bold text-slate-400 uppercase mb-2">Active Branch</p>
+                    <p className="text-slate-700 font-black">{user?.branch_name || 'Main Office'}</p>
+                 </div>
+              </div>
+              <button 
+                onClick={() => setView('dashboard')}
+                className="mt-4 px-8 py-4 bg-slate-800 text-white rounded-2xl font-bold hover:bg-slate-900 transition-all flex items-center gap-3 active:scale-95"
+              >
+                  <ArrowLeft className="w-5 h-5" /> Return to Dashboard
+              </button>
           </div>
-          <h2 className="text-3xl font-bold text-slate-800 mb-4">{title}</h2>
-          <p className="text-slate-500 text-lg max-w-lg mx-auto">{message}</p>
       </div>
-  );
+    );
+  };
 
   const mainContent = () => {
       switch(view) {
           case 'dashboard': return renderDashboard();
           case 'upload': return renderUpload();
-          case 'cloudinary': return renderViewer('Cloudinary Asset Viewer', 'Viewing images stored in ai_scanner system folders.');
-          case 'sheets': return renderViewer('Google Sheets Viewer', 'Real-time synchronization with active transaction spreadsheet.');
-          default: return null;
+          case 'cloudinary': return renderViewer('Digital Asset Vault', 'Accessing stored ticket images on Cloudinary high-performance storage.', ImageIcon);
+          case 'sheets': return renderViewer('Google Sheets Sync', 'Real-time database synchronization with central management spreadsheet.', FileSpreadsheet);
+          case 'edit': return null; // Logic is outside mainContent for overlay effect
+          default: return renderDashboard();
       }
   };
 

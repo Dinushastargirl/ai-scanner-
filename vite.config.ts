@@ -9,7 +9,8 @@ export default defineConfig(({mode}) => {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, './src'),
+        'node-fetch': path.resolve(__dirname, './src/empty.ts'),
       },
     },
     server: {
