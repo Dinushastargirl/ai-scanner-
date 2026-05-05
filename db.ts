@@ -43,6 +43,7 @@ export const initDb = () => {
       created_by INTEGER,
       ticket_image_url TEXT,
       receipt_image_url TEXT,
+      raw_ocr_text TEXT,
       created_at TEXT,
       updated_at TEXT,
       FOREIGN KEY (branch_id) REFERENCES branches(id),
