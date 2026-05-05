@@ -68,6 +68,11 @@ async function startServer() {
 
   // --- API ROUTES ---
 
+  // Health check
+  app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
   // Login
   app.post('/auth/login', (req, res) => {
     console.log('Login attempt Body:', JSON.stringify(req.body));
@@ -78,7 +83,8 @@ async function startServer() {
         return res.status(400).json({ error: 'Username and password are required' });
       }
 
-      const user: any = db.prepare('SELECT users.*, branches.name as branch_name FROM users LEFT JOIN branches ON users.branch_id = branches.id WHERE username = ?').get(username);
+      const database = db();
+      const user: any = database.prepare('SELECT users.*, branches.name as branch_name FROM users LEFT JOIN branches ON users.branch_id = branches.id WHERE username = ?').get(username);
       
       if (!user) {
         console.log('User not found:', username);
@@ -178,20 +184,22 @@ async function startServer() {
       const raw_ocr_text = data.raw_ocr_text || '';
 
       if (type === 'RECEIPT') {
-        const row: any = db.prepare('SELECT id FROM records WHERE ticket_number = ?').get(ticket_number);
+        const database = db();
+        const row: any = database.prepare('SELECT id FROM records WHERE ticket_number = ?').get(ticket_number);
         if (!row) {
           console.error(`[DB] Redeeming non-existent ticket: ${ticket_number}`);
           return res.status(404).json({ error: 'Original Pawn Ticket not found in database. Please scan the ticket first.' });
         }
 
-        db.prepare('UPDATE records SET status = ?, receipt_image_url = ?, raw_ocr_text = ?, updated_at = ? WHERE ticket_number = ?')
+        database.prepare('UPDATE records SET status = ?, receipt_image_url = ?, raw_ocr_text = ?, updated_at = ? WHERE ticket_number = ?')
           .run('REDEEMED', imageUrl || '', raw_ocr_text, new Date().toISOString(), ticket_number);
         
         console.log(`[DB] Ticket ${ticket_number} redeemed successfully.`);
         await syncToSheets();
         res.json({ message: 'PROCESS COMPLETE - Loan Redeemed' });
       } else {
-        const row: any = db.prepare('SELECT id FROM records WHERE ticket_number = ?').get(ticket_number);
+        const database = db();
+        const row: any = database.prepare('SELECT id FROM records WHERE ticket_number = ?').get(ticket_number);
         
         if (row) {
           console.log(`[DB] Updating existing ticket: ${ticket_number}`);
@@ -207,7 +215,7 @@ async function startServer() {
                         updated_at = ? 
                        WHERE ticket_number = ?`;
           
-          db.prepare(sql).run(
+          database.prepare(sql).run(
             name, nic, item_description, weight, loan_amount, interest_rate, raw_ocr_text,
             imageUrl || '', imageUrl || '', new Date().toISOString(), ticket_number
           );
@@ -219,7 +227,7 @@ async function startServer() {
           const sql = `INSERT INTO records (ticket_number, name, nic, item_description, weight, loan_amount, interest_rate, status, branch_id, created_by, ticket_image_url, raw_ocr_text, created_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
           
-          db.prepare(sql).run(ticket_number, name, nic, item_description, weight, loan_amount, interest_rate, 'ACTIVE', branch_id, req.user.id, imageUrl || '', raw_ocr_text, new Date().toISOString());
+          database.prepare(sql).run(ticket_number, name, nic, item_description, weight, loan_amount, interest_rate, 'ACTIVE', branch_id, req.user.id, imageUrl || '', raw_ocr_text, new Date().toISOString());
           
           await syncToSheets();
           res.json({ message: 'PROCESS COMPLETE - Ticket Created' });
@@ -285,12 +293,14 @@ async function startServer() {
 
     sql += ' ORDER BY records.id DESC LIMIT 50';
 
-    const rows = db.prepare(sql).all(...params);
+    const database = db();
+    const rows = database.prepare(sql).all(...params);
     res.json(rows);
   });
 
   app.get('/api/branches', authenticateToken, (req, res) => {
-    const rows = db.prepare('SELECT * FROM branches').all();
+    const database = db();
+    const rows = database.prepare('SELECT * FROM branches').all();
     res.json(rows);
   });
 
@@ -308,12 +318,31 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
-
-  // await initDb();
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  return app;
 }
 
-startServer();
+const appPromise = startServer();
+
+appPromise.then(app => {
+  if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    const PORT = 3000;
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
+});
+
+export default async (req: any, res: any) => {
+  try {
+    const app = await appPromise;
+    return app(req, res);
+  } catch (err: any) {
+    console.error('SERVER INIT ERROR:', err);
+    res.status(500).json({ 
+      error: 'Server initialization failed', 
+      details: err?.message || String(err),
+      stack: err?.stack
+    });
+  }
+};
 

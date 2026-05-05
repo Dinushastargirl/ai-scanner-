@@ -2,11 +2,25 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 
-const dbPath = path.resolve(process.cwd(), 'database.sqlite');
-const db = new Database(dbPath);
+const isVercel = process.env.VERCEL === '1';
+const dbPath = isVercel ? '/tmp/database.sqlite' : path.resolve(process.cwd(), 'database.sqlite');
+
+console.log(`[DB] Database path configured at: ${dbPath}`);
+
+let db: any = null;
 
 export const initDb = () => {
-  console.log('Initializing database...');
+  if (!db) {
+    try {
+      console.log(`[DB] Opening database at ${dbPath}...`);
+      db = new Database(dbPath);
+    } catch (err) {
+      console.error(`[DB] FAILED TO OPEN DATABASE at ${dbPath}:`, err);
+      throw err;
+    }
+  }
+  
+  console.log('Initializing tables...');
   // Branches table
   db.exec(`
     CREATE TABLE IF NOT EXISTS branches (
@@ -81,4 +95,11 @@ export const initDb = () => {
   return Promise.resolve();
 };
 
-export default db;
+export const getDb = () => {
+  if (!db) {
+    db = new Database(dbPath);
+  }
+  return db;
+};
+
+export default getDb;

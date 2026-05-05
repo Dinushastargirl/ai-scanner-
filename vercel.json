@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } },
+    { "src": "server.ts", "use": "@vercel/node" }
+  ],
+  "rewrites": [
+    { "source": "/auth/(.*)", "destination": "/server.ts" },
+    { "source": "/api/(.*)", "destination": "/server.ts" },
+    { "source": "/health", "destination": "/server.ts" },
+    { "source": "/(.*)", "destination": "/dist/$1" }
+  ]
+}

@@ -7,6 +7,25 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Fix for "Uncaught TypeError: Cannot set property fetch of #<Window> which has only a getter"
+      // This happens when some library tries to polyfill fetch and window.fetch is a read-only getter.
+      (function() {
+        try {
+          const nativeFetch = window.fetch;
+          if (nativeFetch) {
+            Object.defineProperty(window, 'fetch', {
+              value: nativeFetch,
+              writable: true,
+              configurable: true,
+              enumerable: true
+            });
+          }
+        } catch (e) {
+          console.warn('Could not make fetch writeable:', e);
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

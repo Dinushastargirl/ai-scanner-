@@ -68,6 +68,21 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    const checkServer = async () => {
+      try {
+        const res = await fetch('/health');
+        if (res.ok) {
+          const data = await res.json();
+          console.log('Server health check OK:', data);
+        } else {
+          console.error('Server health check FAILED:', res.status);
+        }
+      } catch (err) {
+        console.error('Server health check ERROR:', err);
+      }
+    };
+    checkServer();
+
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
     if (savedToken && savedUser) {
@@ -128,6 +143,11 @@ export default function App() {
       });
       console.log('Login response status:', res.status);
       
+      if (!res.ok) {
+        const errorDetail = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errorDetail}`);
+      }
+
       const text = await res.text();
       console.log('Login raw response:', text);
 
@@ -150,7 +170,9 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Login fetch error:', err);
-      setLoginError('Network error or server unavailable');
+      // Detailed error for debugging
+      const detailedError = err instanceof Error ? err.message : String(err);
+      setLoginError(`Network error: ${detailedError}. Ensure server is running at ${window.location.origin}`);
     } finally {
       setIsLoggingIn(false);
     }
